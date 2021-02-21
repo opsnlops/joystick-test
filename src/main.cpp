@@ -104,12 +104,12 @@ void loop()
   servo3_val = map(y2_val, DS4_ANALOG_STICK_MIN, DS4_ANALOG_STICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
 
   log_v("x1: %d, y1: %d -> 0: %d, 1: %d   x2: %d, y2: %d -> 0: %d, 1: %d\n", x1_val, y1_val, servo0_val, servo1_val, x2_val, y2_val, servo2_val, servo3_val);
-#endif
 
   servos[0].writeMicroseconds(servo0_val);
   servos[1].writeMicroseconds(servo1_val);
   servos[2].writeMicroseconds(servo2_val);
   servos[3].writeMicroseconds(servo3_val);
+#endif
 
   // These servos use a 20ms pulse (50Hz)
   delay(1000 / PERIOD_HZ);
