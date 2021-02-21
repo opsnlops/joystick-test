@@ -5,6 +5,11 @@
 
 int x_val = 0;
 int y_val = 0;
+int servo0_val = 0;
+int servo1_val = 0;
+
+#define USE_PS4
+//#define USE_JOYSTICK
 
 #define SERVO_US_MIN 1000
 #define SERVO_US_MAX 2000
@@ -12,8 +17,8 @@ int y_val = 0;
 #define JOYSTICK_MIN 0
 #define JOYSTICK_MAX 4096
 
-#define DS4_MIN -128
-#define DS4_MAX 128
+#define DS4_ANALOG_STICK_MIN -128
+#define DS4_ANALOG_STICK_MAX 128
 
 #define PERIOD_HZ 50
 
@@ -30,11 +35,13 @@ void setup()
   // Nice long delay to let minicom start
   delay(5000);
 
+#ifdef USE_PS4
   log_i("Enabling Bluetooth...");
   if (!PS4.begin("e4:17:d8:9d:70:6b"))
   {
     log_e("PS4 init failed");
   }
+#endif
 
   ESP32PWM::allocateTimer(0);
   ESP32PWM::allocateTimer(1);
@@ -55,11 +62,21 @@ void setup()
 void loop()
 {
 
+#ifdef USE_JOYSTICK
   x_val = analogRead(34);
   y_val = analogRead(35);
 
-  int servo0_val = map(x_val, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
-  int servo1_val = map(y_val, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
+  servo0_val = map(x_val, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
+  servo1_val = map(y_val, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
+#endif
+
+#ifdef USE_PS4
+  x_val = PS4.RStickX();
+  y_val = PS4.RStickY();
+
+  servo0_val = map(x_val, DS4_ANALOG_STICK_MIN, DS4_ANALOG_STICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
+  servo1_val = map(y_val, DS4_ANALOG_STICK_MIN, DS4_ANALOG_STICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
+#endif
 
   log_v("x: %d, y: %d -> 0: %d, 1: %d\n", x_val, y_val, servo0_val, servo1_val);
 
