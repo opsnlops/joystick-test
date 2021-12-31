@@ -1,10 +1,6 @@
 #include <Arduino.h>
 #include <ESP32Servo.h>
 
-#ifdef USE_PS4
-    #include <PS4Controller.h>
-#endif
-
 #include "MegunoLink.h"
 #include "Filter.h"
 
@@ -17,8 +13,8 @@ int servo1_val = 0;
 int servo2_val = 0;
 int servo3_val = 0;
 
-#define SERVO_US_MIN 1000
-#define SERVO_US_MAX 2000
+#define SERVO_US_MIN 500
+#define SERVO_US_MAX 2500
 
 #define JOYSTICK_MIN 0
 #define JOYSTICK_MAX 4095
@@ -36,8 +32,10 @@ const int servo2Pin = 12;
 const int servo3Pin = 15;
 
 const int joystick0Pin = 34;
+const int joystick1Pin = 35;
 
 void TaskReadAnalogPin(void *pvParameters);
+void TaskMoveServos(void *pvParameters);
 
 void setup()
 {
@@ -46,13 +44,8 @@ void setup()
     while (!Serial)
         ;
 
-#ifdef USE_PS4
-    log_i("Enabling Bluetooth...");
-    if (!PS4.begin("f4:d4:88:64:d7:2b"))
-    {
-        log_e("PS4 init failed");
-    }
-#endif
+    pinMode(joystick0Pin, INPUT);
+    pinMode(joystick1Pin, INPUT);
 
     ESP32PWM::allocateTimer(0);
     ESP32PWM::allocateTimer(1);
@@ -69,19 +62,11 @@ void setup()
     servos[1].attach(servo1Pin, SERVO_US_MIN, SERVO_US_MAX);
     log_i("done");
 
-#ifdef USE_PS4
-    log_i("attaching to servo 2");
-    servos[2].setPeriodHertz(PERIOD_HZ);
-    servos[2].attach(servo2Pin, SERVO_US_MIN, SERVO_US_MAX);
-    log_i("done");
+    // Run on core 0
+    xTaskCreatePinnedToCore(TaskReadAnalogPin, "TaskReadAnalogPin", 10240, NULL, 2, NULL, 0);
 
-    log_i("attaching to servo 3");
-    servos[3].setPeriodHertz(PERIOD_HZ);
-    servos[3].attach(servo3Pin, SERVO_US_MIN, SERVO_US_MAX);
-    log_i("done");
-#endif
-
-    xTaskCreate(TaskReadAnalogPin, "TaskReadAnalogPin", 10240, NULL, 1, NULL);
+    // Run on core 1
+    xTaskCreatePinnedToCore(TaskMoveServos, "TaskMoveServos", 2048, NULL, 1, NULL, 1);
 }
 
 void loop()
@@ -89,45 +74,8 @@ void loop()
     // Kill this loop
     vTaskDelete(NULL);
 
-#ifdef USE_JOYSTICK
-    x1_val = analogRead(joystick0Pin);
-    y1_val = analogRead(35);
-
-    servo0_val = map(x1_val, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
-    servo1_val = map(y1_val, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
-
-    log_v("x: %d, y: %d -> 0: %d, 1: %d\n", x1_val, y1_val, servo0_val, servo1_val);
-    servos[0].writeMicroseconds(servo0_val);
-    servos[1].writeMicroseconds(servo1_val);
-#endif
-
-#ifdef USE_PS4
-
-    if (PS4.isConnected())
-    {
-
-        x1_val = PS4.RStickX();
-        y1_val = PS4.RStickY();
-        x2_val = PS4.LStickX();
-        y2_val = PS4.LStickY();
-
-        servo0_val = map(x1_val, DS4_ANALOG_STICK_MIN, DS4_ANALOG_STICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
-        servo1_val = map(y1_val, DS4_ANALOG_STICK_MIN, DS4_ANALOG_STICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
-        servo2_val = map(x2_val, DS4_ANALOG_STICK_MIN, DS4_ANALOG_STICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
-        servo3_val = map(y2_val, DS4_ANALOG_STICK_MIN, DS4_ANALOG_STICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
-
-        log_v("x1: %d, y1: %d -> 0: %d, 1: %d   x2: %d, y2: %d -> 0: %d, 1: %d\n", x1_val, y1_val, servo0_val, servo1_val, x2_val, y2_val, servo2_val, servo3_val);
-
-        servos[0].writeMicroseconds(servo0_val);
-        servos[1].writeMicroseconds(servo1_val);
-        servos[2].writeMicroseconds(servo2_val);
-        servos[3].writeMicroseconds(servo3_val);
-    }
-#endif
-
-    // These servos use a 20ms pulse (50Hz)
-    delay(1000 / PERIOD_HZ);
 }
+
 
 
 void TaskReadAnalogPin(void *pvParameters)
@@ -143,17 +91,23 @@ void TaskReadAnalogPin(void *pvParameters)
     int count = 0;
     long ticks = 0;
 
-    ExponentialFilter<int> Filter(44, (JOYSTICK_MAX - JOYSTICK_MAX) / 2);
+    ExponentialFilter<int> Filter0(44, (JOYSTICK_MAX - JOYSTICK_MAX) / 2);
+    ExponentialFilter<int> Filter1(44, (JOYSTICK_MAX - JOYSTICK_MAX) / 2);
 
     for (;;)
     {
         // Read the value of the pin
-        Filter.Filter(analogRead(joystick0Pin));
+        Filter0.Filter(analogRead(joystick0Pin));
+        Filter1.Filter(analogRead(joystick1Pin));
 
         if (count++ >= SENSOR_OVERSAMPLING)
         {
-            int value = Filter.Current();
-            log_v(" value: %d (%d)", (int)value, map(value, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX));
+            int currentValue0 = Filter0.Current();
+            int currentValue1 = Filter1.Current();
+            servo0_val = map(currentValue0, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
+            servo1_val = map(currentValue1, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
+
+            log_v("value: %d (%d)", currentValue0, servo0_val);
 
             count = 0;
         }
@@ -164,5 +118,22 @@ void TaskReadAnalogPin(void *pvParameters)
         }
 
         vTaskDelay(taskPeriod);
+    }
+}
+
+
+
+void TaskMoveServos(void *pvParameters)
+{
+
+    TickType_t taskPeriod = pdMS_TO_TICKS(1000 / PERIOD_HZ);
+    
+    for (;;)
+    {
+        // Delay and wait for the sample to arrive
+        vTaskDelay(taskPeriod);
+
+        servos[0].writeMicroseconds(servo0_val);
+        servos[1].writeMicroseconds(servo1_val);
     }
 }
