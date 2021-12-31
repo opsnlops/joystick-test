@@ -1,9 +1,12 @@
 #include <Arduino.h>
-
 #include <ESP32Servo.h>
-#include <PS4Controller.h>
 
-#include "freertos/ringbuf.h"
+#ifdef USE_PS4
+    #include <PS4Controller.h>
+#endif
+
+#include "MegunoLink.h"
+#include "Filter.h"
 
 int x1_val = 0;
 int y1_val = 0;
@@ -18,13 +21,13 @@ int servo3_val = 0;
 #define SERVO_US_MAX 2000
 
 #define JOYSTICK_MIN 0
-#define JOYSTICK_MAX 4096
+#define JOYSTICK_MAX 4095
 
 #define DS4_ANALOG_STICK_MIN -128
 #define DS4_ANALOG_STICK_MAX 127
 
 const int PERIOD_HZ = 50;
-const int SENSOR_OVERSAMPLING = 5;
+const int SENSOR_OVERSAMPLING = 4;
 
 Servo servos[4];
 const int servo0Pin = 13;
@@ -126,16 +129,6 @@ void loop()
     delay(1000 / PERIOD_HZ);
 }
 
-float takeAverage(int values[], int num)
-{
-    int sum = 0;
-    for (int i = 0; i < num; i++)
-    {
-        sum += values[i];
-    }
-
-    return sum / (float)num;
-}
 
 void TaskReadAnalogPin(void *pvParameters)
 {
@@ -148,27 +141,24 @@ void TaskReadAnalogPin(void *pvParameters)
     TickType_t taskPeriod = pdMS_TO_TICKS(1000 / readPeriod);
 
     int count = 0;
-    int ticks = 0;
+    long ticks = 0;
 
-    int values[SENSOR_OVERSAMPLING];
+    ExponentialFilter<int> Filter(44, (JOYSTICK_MAX - JOYSTICK_MAX) / 2);
 
     for (;;)
     {
         // Read the value of the pin
-        uint16_t sensorValue = analogRead(joystick0Pin);
+        Filter.Filter(analogRead(joystick0Pin));
 
-        values[count++] = sensorValue;
-
-        if (count >= SENSOR_OVERSAMPLING)
+        if (count++ >= SENSOR_OVERSAMPLING)
         {
-            double value = takeAverage(values, SENSOR_OVERSAMPLING);
-
-            log_v(" value: %d", (int)value);
+            int value = Filter.Current();
+            log_v(" value: %d (%d)", (int)value, map(value, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX));
 
             count = 0;
         }
 
-        if (ticks % 1000 == 0)
+        if (ticks++ % 1000 == 0)
         {
             log_v("Tick %d", ticks++);
         }
