@@ -73,10 +73,7 @@ void loop()
 {
     // Kill this loop
     vTaskDelete(NULL);
-
 }
-
-
 
 void TaskReadAnalogPin(void *pvParameters)
 {
@@ -121,13 +118,11 @@ void TaskReadAnalogPin(void *pvParameters)
     }
 }
 
-
-
 void TaskMoveServos(void *pvParameters)
 {
 
     TickType_t taskPeriod = pdMS_TO_TICKS(1000 / PERIOD_HZ);
-    
+
     for (;;)
     {
         // Delay and wait for the sample to arrive
