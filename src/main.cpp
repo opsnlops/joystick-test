@@ -1,5 +1,8 @@
-#include <Arduino.h>
+
 #include <ESP32Servo.h>
+#include <Servo.h>
+//#include <FreeRTOS_SAMD21.h>
+#include <ArduinoLog.h>
 
 #include "MegunoLink.h"
 #include "Filter.h"
@@ -31,11 +34,12 @@ const int servo1Pin = 14;
 const int servo2Pin = 12;
 const int servo3Pin = 15;
 
-const int joystick0Pin = 34;
+const int joystick0Pin = 4;
 const int joystick1Pin = 35;
 
 void TaskReadAnalogPin(void *pvParameters);
 void TaskMoveServos(void *pvParameters);
+
 
 void setup()
 {
@@ -44,29 +48,32 @@ void setup()
     while (!Serial)
         ;
 
+    delay(10000);
+
+    Log.begin   (LOG_LEVEL_VERBOSE, &Serial);
     pinMode(joystick0Pin, INPUT);
     pinMode(joystick1Pin, INPUT);
 
-    ESP32PWM::allocateTimer(0);
-    ESP32PWM::allocateTimer(1);
-    ESP32PWM::allocateTimer(2);
-    ESP32PWM::allocateTimer(3);
+    //ESP32PWM::allocateTimer(0);
+    //ESP32PWM::allocateTimer(1);
+    //ESP32PWM::allocateTimer(2);
+    //ESP32PWM::allocateTimer(3);
 
-    log_i("attaching to servo 0");
-    servos[0].setPeriodHertz(PERIOD_HZ);
-    servos[0].attach(servo0Pin, SERVO_US_MIN, SERVO_US_MAX);
-    log_i("done");
+    //log_i("attaching to servo 0");
+    //servos[0].setPeriodHertz(PERIOD_HZ);
+    //servos[0].attach(servo0Pin, SERVO_US_MIN, SERVO_US_MAX);
+    //log_i("done");
 
-    log_i("attaching to servo 1");
-    servos[1].setPeriodHertz(PERIOD_HZ);
-    servos[1].attach(servo1Pin, SERVO_US_MIN, SERVO_US_MAX);
-    log_i("done");
+    //log_i("attaching to servo 1");
+    //servos[1].setPeriodHertz(PERIOD_HZ);
+    //servos[1].attach(servo1Pin, SERVO_US_MIN, SERVO_US_MAX);
+    //log_i("done");
 
     // Run on core 0
-    xTaskCreatePinnedToCore(TaskReadAnalogPin, "TaskReadAnalogPin", 10240, NULL, 2, NULL, 0);
+    xTaskCreate(TaskReadAnalogPin, "TaskReadAnalogPin", 10240, NULL, 2, NULL);
 
     // Run on core 1
-    xTaskCreatePinnedToCore(TaskMoveServos, "TaskMoveServos", 2048, NULL, 1, NULL, 1);
+    xTaskCreate(TaskMoveServos, "TaskMoveServos", 2048, NULL, 1, NULL);
 }
 
 void loop()
@@ -79,7 +86,7 @@ void TaskReadAnalogPin(void *pvParameters)
 {
 
     int readPeriod = (PERIOD_HZ * SENSOR_OVERSAMPLING);
-    log_i("Reading the senor at %dHz", readPeriod);
+    Log.infoln("Reading the senor at %dHz", readPeriod);
 
     // Calculate the length of the period only once since we're going to
     // be doing this a lot
@@ -104,14 +111,14 @@ void TaskReadAnalogPin(void *pvParameters)
             servo0_val = map(currentValue0, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
             servo1_val = map(currentValue1, JOYSTICK_MIN, JOYSTICK_MAX, SERVO_US_MIN, SERVO_US_MAX);
 
-            log_v("value: %d (%d)", currentValue0, servo0_val);
+            Log.verboseln("value: %d (%d)", currentValue0, servo0_val);
 
             count = 0;
         }
 
         if (ticks++ % 1000 == 0)
         {
-            log_v("Tick %d", ticks++);
+            Log.verboseln("Tick %d", ticks++);
         }
 
         vTaskDelay(taskPeriod);
